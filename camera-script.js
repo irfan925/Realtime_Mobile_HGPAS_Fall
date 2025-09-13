@@ -700,7 +700,7 @@ setInterval(() => {
 
   const el = document.getElementById('pose-status');
   if (el) {
-    el.innerHTML = `Status: <b>${currentGaitStatus}</b> (score: ${currentStillnessScore.toFixed(3)}) | Fall-Risk: <b>${score}</b>`;
+    el.innerHTML = `Status: <b>${currentGaitStatus}</b> | Fall-Risk: <b>${score} (Green → Low risk, Amber → Moderate, Red → High risk or near-fall detected </b>`;
     if (score >= 70) {
       el.style.color = '#ff4d4f';   // Red
     } else if (score >= 40) {
