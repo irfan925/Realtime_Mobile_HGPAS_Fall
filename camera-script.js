@@ -580,6 +580,9 @@ document.addEventListener("DOMContentLoaded",function(){
 
 // ==================== Fall-Risk Detection Additions ====================
 
+let currentGaitStatus = "Detecting...";
+let currentStillnessScore = 0;
+
 // --- Global Buffers ---
 const IDX = { NOSE:0, L_HIP:23, R_HIP:24, L_ANKLE:27, R_ANKLE:28 };
 function pixX(lm){ return lm.x * video.videoWidth; }
@@ -687,18 +690,23 @@ function fallRiskScore(features){
   return Math.round(score01 * 100);
 }
 
-// --- Integrate with main loop ---
+// --- Update UI every second ---
 let riskHistory = [];
 setInterval(() => {
   const feat = computeFallRiskSnapshot();
   const score = fallRiskScore(feat);
   riskHistory.push({t: performance.now(), score});
   if (riskHistory.length > 60) riskHistory.shift();
+
   const el = document.getElementById('pose-status');
-  if (el){
-    el.innerHTML += ` | Fall-Risk: <b>${score}</b>`;
-    if (score>=70){ el.style.color = '#ff4d4f'; }
-    else if (score>=40){ el.style.color = '#ffb020'; }
-    else { el.style.color = '#3cb371'; }
+  if (el) {
+    el.innerHTML = `Status: <b>${currentGaitStatus}</b> (score: ${currentStillnessScore.toFixed(3)}) | Fall-Risk: <b>${score}</b>`;
+    if (score >= 70) {
+      el.style.color = '#ff4d4f';   // Red
+    } else if (score >= 40) {
+      el.style.color = '#ffb020';   // Amber
+    } else {
+      el.style.color = '#3cb371';   // Green
+    }
   }
 }, 1000);
