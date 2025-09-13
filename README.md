@@ -1,6 +1,8 @@
 # Realtime_Mobile_HGPAS_Fall
 Fall risk scoring
 
+## For Live demo in the browser [click here](https://irfan925.github.io/Realtime_Mobile_HGPAS_Fall/)
+
 
 What’s Inside
 
@@ -10,11 +12,11 @@ Feature extraction: sway, cadence, variability, symmetry, near-fall proxy.
 
 Fall-Risk Score (0–100) with Green/Amber/Red indicator.
 
-Updates every 1 second in your <h3 id="pose-status">.
+Updates every 1 second in your UI.
 
 
 
-Your <h3 id="pose-status"> will now show:
+Your UI will now show:
 
 Status: Walking (score: 0.042) | Fall-Risk: 55 (Amber)
 
