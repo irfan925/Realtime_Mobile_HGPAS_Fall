@@ -575,3 +575,130 @@ async function init_camera_canvas()
 document.addEventListener("DOMContentLoaded",function(){
     init_camera_canvas();
 });
+
+
+
+// ==================== Fall-Risk Detection Additions ====================
+
+// --- Global Buffers ---
+const IDX = { NOSE:0, L_HIP:23, R_HIP:24, L_ANKLE:27, R_ANKLE:28 };
+function pixX(lm){ return lm.x * video.videoWidth; }
+function pixY(lm){ return lm.y * video.videoHeight; }
+
+const standingBuf = [];   // mid-hip positions during Standing
+const stepsBuf = [];      // detected steps
+const stepIntervals = []; // ms between steps
+const stepWidths = [];    // L-R ankle distance
+let prev = { t: null, Lx: null, Rx: null }, velHist = [];
+
+// --- Step detection ---
+function detectStepsFromAnkles(t, L, R){
+  const Lx = pixX(L), Rx = pixX(R);
+  if (prev.t != null){
+    const dt = Math.max(1, t - prev.t);
+    const vL = (Lx - prev.Lx) / dt, vR = (Rx - prev.Rx) / dt;
+    velHist.push({t, vL, vR});
+    while(velHist.length && (t - velHist[0].t) > 4000) velHist.shift();
+
+    const N = velHist.length;
+    if (N >= 3){
+      const a = velHist[N-3], b = velHist[N-2];
+      const TH = 0.10;
+      if (Math.sign(a.vL) !== Math.sign(b.vL) && Math.abs(b.vL) > TH){
+        registerStep(t, "L");
+      }
+      if (Math.sign(a.vR) !== Math.sign(b.vR) && Math.abs(b.vR) > TH){
+        registerStep(t, "R");
+      }
+    }
+  }
+  prev = { t, Lx, Rx };
+}
+
+function registerStep(t, side){
+  const last = stepsBuf.length ? stepsBuf[stepsBuf.length-1].t : null;
+  stepsBuf.push({t, side});
+  while(stepsBuf.length && (t - stepsBuf[0].t) > 20000) stepsBuf.shift();
+
+  if (last){
+    const dt = t - last;
+    stepIntervals.push({t, dt});
+    while(stepIntervals.length && (t - stepIntervals[0].t) > 20000) stepIntervals.shift();
+  }
+}
+
+// --- Feature computation ---
+function rms(arr){
+  const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+  const v = arr.reduce((s,x)=> s + (x-m)*(x-m), 0)/Math.max(1,arr.length);
+  return Math.sqrt(v);
+}
+function coefVar(values){
+  if (values.length < 3) return 0;
+  const m = values.reduce((a,b)=>a+b,0)/values.length;
+  if (m === 0) return 0;
+  const sd = Math.sqrt(values.reduce((s,x)=> s + (x-m)*(x-m), 0)/values.length);
+  return (sd/m) * 100;
+}
+function symmetryIndex(Lvals, Rvals){
+  if (!Lvals.length || !Rvals.length) return 0;
+  const mL = Lvals.reduce((a,b)=>a+b,0)/Lvals.length;
+  const mR = Rvals.reduce((a,b)=>a+b,0)/Rvals.length;
+  const denom = 0.5*(mL+mR) || 1;
+  return 100 * Math.abs(mL - mR) / denom;
+}
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+function computeFallRiskSnapshot(){
+  const swayX = standingBuf.map(p=>p.x);
+  const swayY = standingBuf.map(p=>p.y);
+  const swayRMS = (swayX.length>10) ? Math.hypot(rms(swayX), rms(swayY)) : 0;
+
+  const stepTimes = stepIntervals.map(s=>s.dt);
+  const cadence = stepTimes.length ? 60000 / (stepTimes.reduce((a,b)=>a+b,0)/stepTimes.length) : 0;
+  const stepTimeCV = coefVar(stepTimes);
+
+  const widths = stepWidths.map(d=>d.width);
+  const stepWidthCV = coefVar(widths);
+
+  const Lcnt = stepsBuf.filter(s=>s.side==="L").length;
+  const Rcnt = stepsBuf.filter(s=>s.side==="R").length;
+  const sym = symmetryIndex([Lcnt],[Rcnt]);
+
+  const recentVel = velHist.filter(v=> velHist.length && (velHist[velHist.length-1].t - v.t) <= 3000);
+  const burst = recentVel.some(v => Math.max(Math.abs(v.vL), Math.abs(v.vR)) > 0.35);
+  const recentStanding = standingBuf.slice(-10);
+  const hipDrop = recentStanding.length>=2 && (recentStanding[recentStanding.length-2].y - recentStanding[recentStanding.length-1].y) > 18;
+  const nearFall = burst && hipDrop ? 1 : 0;
+
+  return { swayRMS, cadence, stepTimeCV, stepWidthCV, sym, nearFall };
+}
+
+function fallRiskScore(features){
+  const {swayRMS, cadence, stepTimeCV, stepWidthCV, sym, nearFall} = features;
+  const nSway  = clamp01(swayRMS / 12);
+  const nCad   = clamp01((90 - cadence) / 50);
+  const nStab  = clamp01(stepTimeCV / 7);
+  const nWidth = clamp01(stepWidthCV / 10);
+  const nSym   = clamp01(sym / 12);
+  const nNear  = nearFall ? 1 : 0;
+  const w = { sway:0.20, cad:0.15, stab:0.20, width:0.15, sym:0.15, near:0.15 };
+  const score01 = w.sway*nSway + w.cad*nCad + w.stab*nStab + w.width*nWidth + w.sym*nSym + w.near*nNear;
+  return Math.round(score01 * 100);
+}
+
+// --- Integrate with main loop ---
+let riskHistory = [];
+setInterval(() => {
+  const feat = computeFallRiskSnapshot();
+  const score = fallRiskScore(feat);
+  riskHistory.push({t: performance.now(), score});
+  if (riskHistory.length > 60) riskHistory.shift();
+  const el = document.getElementById('pose-status');
+  if (el){
+    el.innerHTML += ` | Fall-Risk: <b>${score}</b>`;
+    if (score>=70){ el.style.color = '#ff4d4f'; }
+    else if (score>=40){ el.style.color = '#ffb020'; }
+    else { el.style.color = '#3cb371'; }
+  }
+}, 1000);
