@@ -370,7 +370,7 @@ function onResults(results)
                 );
 
                 // Update <h3> label
-                poseStatusEl.innerHTML = `Status: <b>${smoothState}</b> (score: ${score.toFixed(3)})`;
+                poseStatusEl.innerHTML = `Activity: <b>${smoothState}</b> (score: ${score.toFixed(3)})`;
                 poseStatusEl.style.color = smoothState === "Walking" ? "green" : "orange";
             }
 
@@ -580,9 +580,6 @@ document.addEventListener("DOMContentLoaded",function(){
 
 // ==================== Fall-Risk Detection Additions ====================
 
-let currentGaitStatus = "Detecting...";
-let currentStillnessScore = 0;
-
 // --- Global Buffers ---
 const IDX = { NOSE:0, L_HIP:23, R_HIP:24, L_ANKLE:27, R_ANKLE:28 };
 function pixX(lm){ return lm.x * video.videoWidth; }
@@ -694,19 +691,19 @@ function fallRiskScore(features){
 let riskHistory = [];
 setInterval(() => {
   const feat = computeFallRiskSnapshot();
-  const score = fallRiskScore(feat);
-  riskHistory.push({t: performance.now(), score});
+  const scoref = fallRiskScore(feat);
+  riskHistory.push({t: performance.now(), scoref});
   if (riskHistory.length > 60) riskHistory.shift();
 
-  const el = document.getElementById('pose-status');
-  if (el) {
-    el.innerHTML = `Status: <b>${currentGaitStatus}</b> | Fall-Risk: <b>${score} (Green → Low risk, Amber → Moderate, Red → High risk or near-fall detected </b>`;
-    if (score >= 70) {
-      el.style.color = '#ff4d4f';   // Red
-    } else if (score >= 40) {
-      el.style.color = '#ffb020';   // Amber
+  const fallScore = document.getElementById("fall-score");
+  if (fallScore) {
+    fallScore.innerHTML = `Fall-Risk: ${scoref} (Green → Low risk, Amber → Moderate, Red → High risk)`;
+    if (scoref >= 70) {
+      fallScore.style.color = '#ff4d4f';   // Red
+    } else if (scoref >= 40) {
+      fallScore.style.color = '#ffb020';   // Amber
     } else {
-      el.style.color = '#3cb371';   // Green
+      fallScore.style.color = '#3cb371';   // Green
     }
   }
 }, 1000);
